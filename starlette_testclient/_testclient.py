@@ -443,6 +443,7 @@ class TestClient(requests.Session):
         self.headers.update({"user-agent": "testclient"})
         self.app = asgi_app
         self.base_url = base_url
+        self._lifespan = True
 
     @contextlib.contextmanager
     def _portal_factory(
@@ -534,7 +535,8 @@ class TestClient(requests.Session):
 
             @stack.callback
             def wait_shutdown() -> None:
-                portal.call(self.wait_shutdown)
+                if self._lifespan:
+                    portal.call(self.wait_shutdown)
 
             self.exit_stack = stack.pop_all()
 
@@ -547,6 +549,9 @@ class TestClient(requests.Session):
         scope = {"type": "lifespan", "asgi": {"version": "3.0"}}
         try:
             await self.app(scope, self.stream_receive.receive, self.stream_send.send)
+        except ValueError:
+            await self.stream_send.send({"type": "lifespan.startup.failed"})
+            self._lifespan = False
         finally:
             await self.stream_send.send(None)
 
